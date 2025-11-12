@@ -437,12 +437,18 @@ namespace CareLink
         }
 
         // 로그 파일 쓰기 ---------------------------------------------------------------------------------------------------------------------------------------
-        private void WriteLog(string message)
+        private async void WriteLog(string message)
         {
-            string logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "CareLink.log");
-            string logEntry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}";
-            File.AppendAllText(logFilePath, logEntry);
-            UxLogPane.AppendText(logEntry);
+            await Task.Run(() =>
+            {
+                string logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "CareLink.log");
+                string logEntry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}";
+                File.AppendAllText(logFilePath, logEntry);
+                Dispatcher.Invoke(() =>
+                {
+                    UxLogPane.AppendText(logEntry);
+                });
+            });
         }
 
         // 작업 실행 -------------------------------------------------------------------------------------------------------------------------------------------
