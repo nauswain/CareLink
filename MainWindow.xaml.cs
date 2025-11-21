@@ -463,23 +463,22 @@ namespace CareLink
                     string fileNamePattern = rule.Item1;
                     string samePagesInput = rule.Item2;
                     string referenceFileName = rule.Item3;
-
-                    // 파일 이름이 패턴과 일치하는지 확인
-                    if (Path.GetFileName(fileFullName.Key).Contains(fileNamePattern))
+                    bool isModified = false;
+                    try
                     {
-                        string referenceFullName = Path.Combine(ReferenceFolder, referenceFileName);
-                        List<int> samePages = [];
-                        foreach (string samePageInput in samePagesInput.Split(','))
+                        // 파일 이름이 패턴과 일치하는지 확인
+                        if (Path.GetFileName(fileFullName.Key).Contains(fileNamePattern))
                         {
-                            if (int.TryParse(samePageInput, out int samePageNumber))
+                            string referenceFullName = Path.Combine(ReferenceFolder, referenceFileName);
+                            List<int> samePages = [];
+                            foreach (string samePageInput in samePagesInput.Split(','))
                             {
-                                samePages.Add(samePageNumber - 1); // 0부터 시작하는 인덱스로 변환
+                                if (int.TryParse(samePageInput, out int samePageNumber))
+                                {
+                                    samePages.Add(samePageNumber - 1); // 0부터 시작하는 인덱스로 변환
+                                }
                             }
-                        }
-                        bool isModified = false;
-                        foreach (int pageIndex in samePages)
-                        {
-                            try
+                            foreach (int pageIndex in samePages)
                             {
                                 bool arePagesEqual = ArePagesEqual(fileFullName.Key, pageIndex, referenceFullName, pageIndex, tolerance: 0.01f, dpi: 150);
                                 Debug.WriteLine($"비교 중: {Path.GetFileName(fileFullName.Key)} 페이지 {pageIndex + 1} vs {referenceFileName} 페이지 {pageIndex + 1} => 동일: {arePagesEqual}");
@@ -489,52 +488,52 @@ namespace CareLink
                                     break;
                                 }
                             }
-                            catch (Exception ex)
+                            if (isModified)
                             {
-                                WriteLog($"오류 발생: {ex.Message}");
-                                isModified = false;
-                                break;
+                                WriteLog($"{Path.GetFileName(fileFullName.Key)}...[X]");
                             }
-                        }
-                        if (isModified)
-                        {
-                            WriteLog($"{Path.GetFileName(fileFullName.Key)}...[X]");
-                        }
-                        else
-                        {
-                            using (var doc = new PdfDocument(fileFullName.Key))
+                            else
                             {
-                                // 동일 위치에 새 빈 페이지 생성
-                                // (기존 페이지와 동일한 크기로 생성하고 싶으면 인접 페이지 참고)
-                                double width = 595;  // A4 기본 (points 단위)
-                                double height = 842;
-                                //if (pageCount > 0)
-                                //{
-                                //    width = doc.Pages[Math.Min(targetPageIndex, pageCount - 1)].Width;
-                                //    height = doc.Pages[Math.Min(targetPageIndex, pageCount - 1)].Height;
-                                //}
-                                foreach (int pageIndex in samePages)
+                                using (var doc = new PdfDocument(fileFullName.Key))
                                 {
-                                    // 기존 페이지 제거
-                                    doc.Pages.RemoveAt(pageIndex);  // 내부적으로 FPDFPage_Delete 호출
-                                    doc.Pages.Insert(pageIndex, width, height);
+                                    // 동일 위치에 새 빈 페이지 생성
+                                    // (기존 페이지와 동일한 크기로 생성하고 싶으면 인접 페이지 참고)
+                                    double width = 595;  // A4 기본 (points 단위)
+                                    double height = 842;
+                                    //if (pageCount > 0)
+                                    //{
+                                    //    width = doc.Pages[Math.Min(targetPageIndex, pageCount - 1)].Width;
+                                    //    height = doc.Pages[Math.Min(targetPageIndex, pageCount - 1)].Height;
+                                    //}
+                                    foreach (int pageIndex in samePages)
+                                    {
+                                        // 기존 페이지 제거
+                                        doc.Pages.RemoveAt(pageIndex);  // 내부적으로 FPDFPage_Delete 호출
+                                        doc.Pages.Insert(pageIndex, width, height);
+                                    }
+                                    // 결과 저장
+                                    doc.Pages.Insert(0, width, height);
+                                    doc.Pages.Insert(0, width, height);
+                                    doc.Save(fileFullName.Value);
                                 }
-                                // 결과 저장
-                                doc.Pages.Insert(0, width, height);
-                                doc.Pages.Insert(0, width, height);
-                                doc.Save(fileFullName.Value);
+                                File.Delete(fileFullName.Key);
+                                WriteLog($"{Path.GetFileName(fileFullName.Key)}...[O]");
                             }
-                            File.Delete(fileFullName.Key);
-                            WriteLog($"{Path.GetFileName(fileFullName.Key)}...[O]");
+                            break; // 첫 번째 일치하는 규칙만 적용
                         }
-                        break; // 첫 번째 일치하는 규칙만 적용
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteLog($"오류 발생: {ex.Message}");
+                        isModified = false;
+                        break;
                     }
                 }
             }
         }
 
         // 두 PDF 페이지 비교 -----------------------------------------------------------------------------------------------------------------------------------
-        public static bool ArePagesEqual(string pdfPath1, int pageIndex1, string pdfPath2, int pageIndex2, float tolerance = 0f, int dpi = 72)
+        public bool ArePagesEqual(string pdfPath1, int pageIndex1, string pdfPath2, int pageIndex2, float tolerance = 0f, int dpi = 72)
         {
             using var doc1 = new PdfDocument(pdfPath1);
             using var doc2 = new PdfDocument(pdfPath2);
@@ -558,43 +557,50 @@ namespace CareLink
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static bool CompareBitmaps(PDFiumBitmap bmp1, PDFiumBitmap bmp2, float tolerance)
+        private bool CompareBitmaps(PDFiumBitmap bmp1, PDFiumBitmap bmp2, float tolerance)
         {
             if (bmp1.Width != bmp2.Width || bmp1.Height != bmp2.Height)
                 return false;
-
-            unsafe
+            try
             {
-                byte* ptr1 = (byte*)bmp1.Scan0.ToPointer();
-                byte* ptr2 = (byte*)bmp2.Scan0.ToPointer();
-                int stride1 = bmp1.Stride;
-                int stride2 = bmp2.Stride;
-                int width = bmp1.Width;
-                int height = bmp1.Height;
-                int bpp = 4; // BGRA
-
-                long totalDiff = 0;
-                long totalPixels = (long)width * height;
-
-                for (int y = 0; y < height; y++)
+                unsafe
                 {
-                    byte* row1 = ptr1 + y * stride1;
-                    byte* row2 = ptr2 + y * stride2;
+                    byte* ptr1 = (byte*)bmp1.Scan0.ToPointer();
+                    byte* ptr2 = (byte*)bmp2.Scan0.ToPointer();
+                    int stride1 = bmp1.Stride;
+                    int stride2 = bmp2.Stride;
+                    int width = bmp1.Width;
+                    int height = bmp1.Height;
+                    int bpp = 4; // BGRA
 
-                    for (int x = 0; x < width; x++)
+                    long totalDiff = 0;
+                    long totalPixels = (long)width * height;
+
+                    for (int y = 0; y < height; y++)
                     {
-                        byte b1 = row1[0], g1 = row1[1], r1 = row1[2], a1 = row1[3];
-                        byte b2 = row2[0], g2 = row2[1], r2 = row2[2], a2 = row2[3];
+                        byte* row1 = ptr1 + y * stride1;
+                        byte* row2 = ptr2 + y * stride2;
 
-                        totalDiff += Math.Abs(b1 - b2) + Math.Abs(g1 - g2) + Math.Abs(r1 - r2) + Math.Abs(a1 - a2);
+                        for (int x = 0; x < width; x++)
+                        {
+                            byte b1 = row1[0], g1 = row1[1], r1 = row1[2], a1 = row1[3];
+                            byte b2 = row2[0], g2 = row2[1], r2 = row2[2], a2 = row2[3];
 
-                        row1 += bpp;
-                        row2 += bpp;
+                            totalDiff += Math.Abs(b1 - b2) + Math.Abs(g1 - g2) + Math.Abs(r1 - r2) + Math.Abs(a1 - a2);
+
+                            row1 += bpp;
+                            row2 += bpp;
+                        }
                     }
-                }
 
-                double avgDiff = totalDiff / (double)(totalPixels * 4 * 255); // 0~1 정규화
-                return avgDiff <= tolerance;
+                    double avgDiff = totalDiff / (double)(totalPixels * 4 * 255); // 0~1 정규화
+                    return avgDiff <= tolerance;
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"오류 발생: {ex.Message}");
+                return false;
             }
         }
     }
