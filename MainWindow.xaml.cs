@@ -407,9 +407,9 @@ namespace CareLink
                                 if (logTime >= startDateTime && logTime <= endDateTime)
                                 {
                                     logBuilder.AppendLine(line);
-                                    if (line.Contains("...[O]"))
+                                    if (line.Contains("..."))
                                     {
-                                        string[] parts = line.Split(["] ", "...[O]"], StringSplitOptions.RemoveEmptyEntries);
+                                        string[] parts = line.Split(["] ", "..."], StringSplitOptions.RemoveEmptyEntries);
                                         if (parts.Length > 0)
                                         {
                                             string fileName = Path.GetFileName(parts[1].Trim());
